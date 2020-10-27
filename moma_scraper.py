@@ -7,21 +7,57 @@ import bs4 as bs
 import requests
 
 def retrieve_item(n: int):
-    ''' Gets image and metadata from https://www.moma.org/collection/works/n
+    ''' Gets image and metadata from https://www.moma.org/collection/works/n.
+
+        Args:
+            n: item number (at end of URL).
+
+        Returns:
+            dict: dictionary of metadata.
+            str: complete URL of highest-res image available for item.
     '''
+    # retrieve the webpage
     headers = {'User-Agent':'Mozilla/5.0'}
     src_url = 'https://www.moma.org/collection/works/' + str(n)
     r = requests.get(src_url, headers=headers)
+
+    # parse into soup
     soup = bs.BeautifulSoup(r.text, 'html.parser')
 
+    # get metadata from header
     work_tag = soup.find('section', attrs={'class':'work'})
-    work_tag_text = [v.text for v in work_tag.find('h1').findAll('span')]
+    meta_work_v = [v.text for v in work_tag.find('h1').findAll('span')]
+    meta_work_k = ['Artist', 'Work', 'Year']
+    meta_work_dct = {k:v for k, v in zip(meta_work_k, meta_work_v)}
+
+    # get image url
     img_url = work_tag.find(
                         'picture').findAll('source')[-1]['srcset'].split(' ')[0]
-    caption_keys = [t.text for t in
+    img_url = 'https://www.moma.org' + img_url
+
+    # get metadata from caption
+    meta_caption_k = [t.text for t in
                             soup.findAll('dt', {'class':'work__caption__term'})]
-    caption_values = [t.text for t in
-                     soup.findAll('dd', {'class':'work__caption__description'})]
-    caption_dct = {caption_keys[j]:caption_values[j] for j in
-                                                       range(len(caption_keys))}
-    return work_tag_text, img_url, caption_dct
+    meta_caption_v = [t.text for t in
+                      soup.findAll('dd', {'class':'work__caption__description'})]
+    meta_caption_dct = {k:v for k, v in
+                            zip(meta_caption_k, meta_caption_v)}
+
+    # merge metadata dictionaries
+    meta_dct = {**meta_work_dct, **meta_caption_dct}
+
+    # clean metadata entries
+    def clean(s:str): return(s.replace('/n', '').strip())
+    meta_dct = {clean(k): clean(v) for k, v in meta_dct.items()}
+
+    # include URL in metadata
+    meta_dct['url'] = img_url
+
+    return meta_dct, img_url
+
+def write_to_disk(N: int):
+    ''' Writes images and metadata for the first N items in the online
+        MoMA catalogue to disk. Metadata is written as JSON.
+    '''
+    for n in range(1, N+1):
+        img, metadata = retrieve_item(n)
